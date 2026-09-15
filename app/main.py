@@ -155,7 +155,8 @@ def predict(customer: CustomerFeatures):
             detail=f"Preprocessing failed: {str(e)}"
         )
 
-    churn_proba = float(model.predict_proba(input_processed)[0][1])
+    proba_output = model.predict_proba(input_processed)[0]
+    churn_proba = float(proba_output[1] if len(proba_output) > 1 else proba_output[0])
 
     return PredictionResponse(
         churn_probability=round(churn_proba, 4),
