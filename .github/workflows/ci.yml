@@ -1,47 +1,38 @@
 name: CI/CD Pipeline
 
-# TRIGGERS
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
-# JOBS
 jobs:
   test:
     name: Run Tests
-    runs-on: ubuntu-lates
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Python version we're using
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      # Dependencies from requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
-
 
       - name: Create dummy artifacts for testing
         run: |
           mkdir -p artifacts
           python - <<'EOF'
           import pickle
-          from sklearn.pipeline import Pipeline
-          from sklearn.preprocessing import StandardScaler
-          from sklearn.compose import ColumnTransformer
-          from sklearn.ensemble import RandomForestClassifier
-          import numpy as np
-
-          # Minimal preprocessor that accepts our input shape
-          # We fit it on a tiny synthetic dataset with the right column names
           import pandas as pd
+          from sklearn.compose import ColumnTransformer
+          from sklearn.preprocessing import StandardScaler, OneHotEncoder
+          from sklearn.ensemble import RandomForestClassifier
 
           cols_num = ["tenure", "MonthlyCharges", "TotalCharges"]
           cols_cat = [
@@ -53,16 +44,12 @@ jobs:
           ]
           cols_bin = ["SeniorCitizen"]
 
-          from sklearn.preprocessing import StandardScaler, OneHotEncoder
-
           preprocessor = ColumnTransformer(transformers=[
               ("num", StandardScaler(), cols_num),
-              ("cat", OneHotEncoder(handle_unknown="ignore",
-                                    sparse_output=False), cols_cat),
+              ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cols_cat),
               ("bin", "passthrough", cols_bin)
           ])
 
-          # Minimal synthetic data to fit the preprocessor
           dummy_df = pd.DataFrame([{
               "tenure": 1, "MonthlyCharges": 50.0, "TotalCharges": 50.0,
               "SeniorCitizen": 0, "gender": "Male", "Partner": "No",
@@ -77,7 +64,6 @@ jobs:
 
           X = preprocessor.fit_transform(dummy_df)
 
-          # Minimal model fitted on the same synthetic data
           model = RandomForestClassifier(n_estimators=2, random_state=42)
           model.fit(X, [1])
 
@@ -100,7 +86,6 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-
       - name: Checkout code
         uses: actions/checkout@v4
 
