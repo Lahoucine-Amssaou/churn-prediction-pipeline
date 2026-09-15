@@ -1,0 +1,112 @@
+name: CI/CD Pipeline
+
+# TRIGGERS
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# JOBS
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-lates
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Python version we're using
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # Dependencies from requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+
+      - name: Create dummy artifacts for testing
+        run: |
+          mkdir -p artifacts
+          python - <<'EOF'
+          import pickle
+          from sklearn.pipeline import Pipeline
+          from sklearn.preprocessing import StandardScaler
+          from sklearn.compose import ColumnTransformer
+          from sklearn.ensemble import RandomForestClassifier
+          import numpy as np
+
+          # Minimal preprocessor that accepts our input shape
+          # We fit it on a tiny synthetic dataset with the right column names
+          import pandas as pd
+
+          cols_num = ["tenure", "MonthlyCharges", "TotalCharges"]
+          cols_cat = [
+              "gender", "Partner", "Dependents", "PhoneService",
+              "MultipleLines", "InternetService", "OnlineSecurity",
+              "OnlineBackup", "DeviceProtection", "TechSupport",
+              "StreamingTV", "StreamingMovies", "Contract",
+              "PaperlessBilling", "PaymentMethod"
+          ]
+          cols_bin = ["SeniorCitizen"]
+
+          from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
+          preprocessor = ColumnTransformer(transformers=[
+              ("num", StandardScaler(), cols_num),
+              ("cat", OneHotEncoder(handle_unknown="ignore",
+                                    sparse_output=False), cols_cat),
+              ("bin", "passthrough", cols_bin)
+          ])
+
+          # Minimal synthetic data to fit the preprocessor
+          dummy_df = pd.DataFrame([{
+              "tenure": 1, "MonthlyCharges": 50.0, "TotalCharges": 50.0,
+              "SeniorCitizen": 0, "gender": "Male", "Partner": "No",
+              "Dependents": "No", "PhoneService": "Yes",
+              "MultipleLines": "No", "InternetService": "DSL",
+              "OnlineSecurity": "No", "OnlineBackup": "No",
+              "DeviceProtection": "No", "TechSupport": "No",
+              "StreamingTV": "No", "StreamingMovies": "No",
+              "Contract": "Month-to-month", "PaperlessBilling": "Yes",
+              "PaymentMethod": "Electronic check"
+          }])
+
+          X = preprocessor.fit_transform(dummy_df)
+
+          # Minimal model fitted on the same synthetic data
+          model = RandomForestClassifier(n_estimators=2, random_state=42)
+          model.fit(X, [1])
+
+          with open("artifacts/preprocessor.pkl", "wb") as f:
+              pickle.dump(preprocessor, f)
+          with open("artifacts/best_model.pkl", "wb") as f:
+              pickle.dump(model, f)
+
+          print("Dummy artifacts created successfully")
+          EOF
+
+      - name: Run tests
+        run: |
+          PYTHONPATH=src:. pytest tests/ -v --tb=short
+
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trigger Render deployment
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
+            --fail \
+            --silent \
+            --show-error
